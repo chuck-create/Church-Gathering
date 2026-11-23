@@ -8,4 +8,5 @@ happens on the App page.
 - `index.html`: the app; opens the App page and asks about notifications
 - `sw.js`: shows notifications and opens the right screen when one is tapped
 - `manifest.webmanifest`: lets people install it (Add to Home Screen / Install app)
+- `bible/index.html`: the free public Bible (read, search, reading plans, notes), open to anyone
 - `CNAME`: serves it at app.gatheringtc.com (GitHub Pages)
