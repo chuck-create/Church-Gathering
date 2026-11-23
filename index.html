@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Gathering</title>
+<meta name="description" content="Your church: messages, Forum, groups, care and serving.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="https://static.wixstatic.com/media/30d5ed_0c1d11be32ce4dea87f79df6e95a6747~mv2.png/v1/fill/w_192,h_192,al_c,q_90,enc_png/gathering-192.png">
+<link rel="apple-touch-icon" href="https://static.wixstatic.com/media/30d5ed_0c1d11be32ce4dea87f79df6e95a6747~mv2.png/v1/fill/w_180,h_180,al_c,q_90,enc_png/gathering-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gathering">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff">
+<style>
+html,body{margin:0;height:100%;background:#fff;overflow:hidden;overscroll-behavior:none}
+body{font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#160d36}
+#app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
+#probe{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+#wait{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;text-align:center;padding:24px;z-index:5;transition:opacity .25s}
+#wait.gone{opacity:0;pointer-events:none}
+#wait img{width:84px;height:84px;border-radius:20px;box-shadow:0 6px 24px rgba(90,43,255,.18)}
+#wait p{margin:0;color:#463c6b;max-width:32ch}
+#wait button,#sheet button{appearance:none;border:0;border-radius:14px;padding:14px 20px;font:600 16px/1.2 inherit;cursor:pointer;background:#5a2bff;color:#fff}
+#wait button[hidden],#sheet button[hidden]{display:none}
+#sheet{position:fixed;inset:0;z-index:10;background:rgba(22,13,54,.45);display:flex;align-items:flex-end;justify-content:center}
+#sheet[hidden]{display:none}
+#sheet .c{background:#fff;border-radius:22px 22px 0 0;width:100%;max-width:520px;padding:22px 22px calc(22px + env(safe-area-inset-bottom,0px));text-align:center;box-shadow:0 -10px 40px rgba(0,0,0,.2)}
+@media (min-width:761px){#sheet{align-items:center}#sheet .c{border-radius:22px}}
+#sheet h2{font-size:21px;line-height:1.25;margin:0 0 8px}
+#sheet p{margin:0 auto 14px;color:#463c6b;max-width:36ch}
+#sheet button{width:100%;max-width:340px;margin-top:6px}
+#sheet button.g{background:transparent;color:#5a2bff}
+</style>
+</head>
+<body>
+<iframe id="app" title="The Gathering" allow="clipboard-write; web-share; fullscreen"></iframe>
+<div id="probe"></div>
+<div id="wait" role="status">
+  <img alt="" src="https://static.wixstatic.com/media/30d5ed_0c1d11be32ce4dea87f79df6e95a6747~mv2.png/v1/fill/w_180,h_180,al_c,q_90,enc_png/gathering-180.png">
+  <p id="wait-t">Opening The Gathering…</p>
+  <button type="button" id="wait-r" hidden>Try again</button>
+</div>
+<div id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-t">
+  <div class="c"><h2 id="sheet-t"></h2><p id="sheet-p"></p>
+  <button type="button" id="sheet-on">Turn on notifications</button>
+  <button type="button" class="g" id="sheet-no">Not now</button></div>
+</div>
+<noscript><p style="padding:24px">The Gathering needs JavaScript. Or open <a href="https://www.gatheringtc.com/app">www.gatheringtc.com/app</a>.</p></noscript>
+<script>
+/* The Gathering app. Shows your church's App page (www.gatheringtc.com/app) full screen,
+   and handles notifications for it, which the church website itself can't do.
+   It talks only to that page, with messages tagged tgShell. No account data is kept here. */
+(function(){
+'use strict';
+var SITE='https://www.gatheringtc.com',APP=SITE+'/app';
+var d=document,f=d.getElementById('app'),$=function(i){return d.getElementById(i)};
+function mm(q){try{return window.matchMedia(q).matches}catch(e){return false}}
+var standalone=mm('(display-mode: standalone)')||navigator.standalone===true;
+var ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+var phone=standalone||(mm('(max-width: 760px)')&&mm('(pointer: coarse)'));
+var pushApi='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+var EP='tg-push-endpoint',ASKED='tg-push-asked';
+var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}},del:function(k){try{localStorage.removeItem(k)}catch(e){}}};
+var reg=null,vapid=null,ready=false,timer=null;
+
+function deviceName(){var u=navigator.userAgent;if(/iPhone/.test(u))return'iPhone';if(/iPad/.test(u)||(ios&&!/iPhone/.test(u)))return'iPad';if(/Android/.test(u)){var m=/Android[^;]*;\s*([^;)]+?)(?:\sBuild|\))/.exec(u);return m&&m[1].trim()!=='K'?m[1].trim().slice(0,40):'Android phone'}if(/Mac/.test(u))return'Mac';if(/Windows/.test(u))return'Windows computer';return'Computer'}
+function b64uBytes(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function insets(){var cs=getComputedStyle($('probe'));return{top:parseFloat(cs.paddingTop)||0,bottom:parseFloat(cs.paddingBottom)||0}}
+function state(){var perm=pushApi?Notification.permission:'unsupported';var ep=store.get(EP)||'';return{supported:pushApi&&(standalone||!ios),needsInstall:ios&&!standalone,permission:perm,on:perm==='granted'&&!!ep,endpoint:perm==='granted'?ep:'',standalone:standalone,phone:phone,device:deviceName()}}
+function post(m){try{f.contentWindow.postMessage(Object.assign({tgShell:1},m),SITE)}catch(e){}}
+function ctx(){post({type:'ctx',phone:phone,push:pushApi?state():null,insets:insets()})}
+function pushState(){post({type:'push',state:pushApi?state():null})}
+
+/* Open the App page; a notification tap may ask for a particular screen (?go=). */
+function load(){
+  var go='';try{go=new URLSearchParams(location.search).get('go')||''}catch(e){}
+  f.src=APP+(go?'?go='+encodeURIComponent(go.slice(0,140)):'');
+  if(go)try{history.replaceState(null,'','/')}catch(e){}
+  ready=false;$('wait').className='';$('wait-t').textContent='Opening The Gathering…';$('wait-r').hidden=true;
+  clearTimeout(timer);timer=setTimeout(function(){if(!ready){$('wait-t').textContent=navigator.onLine===false?'You’re offline. Connect to the internet, then try again.':'The Gathering is taking a while to open.';$('wait-r').hidden=false}},15000);
+}
+$('wait-r').addEventListener('click',load);
+load();
+
+if(pushApi){
+  try{navigator.serviceWorker.register('/sw.js',{scope:'/'}).then(function(r){reg=r;resync()}).catch(function(){pushApi=false;if(ready)ctx()})}catch(e){pushApi=false}
+  navigator.serviceWorker.addEventListener('message',function(e){var x=e.data||{};if(typeof x.tgNav==='string')post({type:'nav',route:x.tgNav.slice(0,140)})});
+}
+
+window.addEventListener('message',function(e){
+  if(e.source!==f.contentWindow||e.origin!==SITE)return;
+  var m=e.data;if(!m||typeof m!=='object'||m.tgShell!==1)return;
+  switch(m.type){
+    case 'ready':
+      if(m.vapid)vapid=String(m.vapid);
+      if(!ready){ready=true;clearTimeout(timer);$('wait').className='gone'}
+      ctx();resync();break;
+    case 'key':if(m.vapid){vapid=String(m.vapid);resync()}break;
+    case 'ask':if(m.auto)maybeAsk();else ask();break;
+    case 'off':
+      if(reg)reg.pushManager.getSubscription().then(function(s){return s&&s.unsubscribe()}).catch(function(){});
+      store.del(EP);pushState();break;
+    case 'badge':try{if(navigator.setAppBadge){if(m.n>0)navigator.setAppBadge(m.n);else navigator.clearAppBadge()}}catch(x){}break;
+    default:break;
+  }
+});
+window.addEventListener('resize',function(){if(ready)post({type:'insets',insets:insets()})});
+d.addEventListener('visibilitychange',function(){if(d.visibilityState==='visible'&&ready){pushState();resync()}});
+
+/* Notifications: the browser asks only after a tap on this page itself, so the question appears here. */
+function show(t,p,canTurnOn){$('sheet-t').textContent=t;$('sheet-p').textContent=p;$('sheet-on').hidden=!canTurnOn;$('sheet-no').textContent=canTurnOn?'Not now':'OK';$('sheet').hidden=false}
+$('sheet-no').addEventListener('click',function(){store.set(ASKED,'1');$('sheet').hidden=true;pushState()});
+$('sheet').addEventListener('click',function(e){if(e.target===$('sheet'))$('sheet').hidden=true});
+$('sheet-on').addEventListener('click',function(){
+  store.set(ASKED,'1');
+  var p;try{p=Notification.requestPermission()}catch(e){p=Promise.resolve(Notification.permission)}
+  Promise.resolve(p).then(function(perm){$('sheet').hidden=true;if(perm!=='granted')return pushState();return subscribe(true)});
+});
+function ask(){
+  var st=state();
+  if(st.needsInstall)return show('Add the app to your Home Screen first','On iPhone, notifications work only from the Home Screen app. In Safari, tap the Share button, then Add to Home Screen, and open Gathering from there.',false);
+  if(!st.supported)return show('Notifications aren’t available here','This browser can’t receive notifications. Try Chrome, Edge or Safari, or the Home Screen app on your phone.',false);
+  if(st.permission==='denied')return show('Notifications are blocked',ios?'Open the Settings app, tap Notifications, then Gathering, and turn on Allow Notifications.':'Allow notifications for app.gatheringtc.com in your browser’s site settings, then come back.',false);
+  if(st.on)return pushState();
+  show('Turn on notifications?','Get a notice for new messages, Forum replies, care needs you’re asked to follow up on, and serving requests. You choose which ones in the app.',true);
+}
+function maybeAsk(){if(!phone||!pushApi||!(standalone||!ios))return;if(Notification.permission==='default'&&!store.get(ASKED))ask()}
+
+/* Subscribe, then hand the address to the App page, which saves it to the signed-in account. */
+function active(r){if(r.active)return Promise.resolve(r);return new Promise(function(ok){var w=r.installing||r.waiting;if(!w)return ok(r);w.addEventListener('statechange',function(){if(w.state==='activated')ok(r)});setTimeout(function(){ok(r)},8000)})}
+function subscribe(fresh){
+  if(!reg||!vapid){pushState();return Promise.resolve()}
+  return active(reg).then(function(r){return r.pushManager.getSubscription().then(function(s){return s||r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uBytes(vapid)})})})
+    .then(function(sub){var j=sub.toJSON();store.set(EP,j.endpoint);pushState();post({type:'sub',sub:{endpoint:j.endpoint,keys:j.keys},device:deviceName(),fresh:!!fresh})})
+    .catch(function(){pushState()});
+}
+function resync(){if(ready&&reg&&vapid&&pushApi&&Notification.permission==='granted')subscribe(false)}
+})();
+</script>
+</body>
+</html>

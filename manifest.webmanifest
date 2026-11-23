@@ -1,0 +1,25 @@
+{
+ "name": "The Gathering",
+ "short_name": "Gathering",
+ "id": "/",
+ "start_url": "/",
+ "scope": "/",
+ "display": "standalone",
+ "background_color": "#ffffff",
+ "theme_color": "#5a2bff",
+ "description": "Your church: messages, Forum, groups, care and serving.",
+ "icons": [
+  {
+   "src": "https://static.wixstatic.com/media/30d5ed_0c1d11be32ce4dea87f79df6e95a6747~mv2.png/v1/fill/w_192,h_192,al_c,q_90,enc_png/gathering-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "https://static.wixstatic.com/media/30d5ed_0c1d11be32ce4dea87f79df6e95a6747~mv2.png/v1/fill/w_512,h_512,al_c,q_90,enc_png/gathering-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  }
+ ]
+}
