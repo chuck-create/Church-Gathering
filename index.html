@@ -96,18 +96,26 @@ window.addEventListener('message',function(e){
     case 'ready':
       if(m.vapid)vapid=String(m.vapid);
       if(!ready){ready=true;clearTimeout(timer);$('wait').className='gone'}
-      ctx();resync();break;
+      ctx();resync();bibleOffer();break;
     case 'key':if(m.vapid){vapid=String(m.vapid);resync()}break;
     case 'ask':if(m.auto)maybeAsk();else ask();break;
     case 'off':
       if(reg)reg.pushManager.getSubscription().then(function(s){return s&&s.unsubscribe()}).catch(function(){});
       store.del(EP);pushState();break;
+    case 'bibleClear':
+      /* Saved to the person's account now; this device no longer needs its own copy. */
+      try{if(localStorage.getItem('tg-bible')){localStorage.setItem('tg-bible-moved',new Date().toISOString());localStorage.removeItem('tg-bible')}}catch(x){}
+      break;
     case 'badge':try{if(navigator.setAppBadge){if(m.n>0)navigator.setAppBadge(m.n);else navigator.clearAppBadge()}}catch(x){}break;
     default:break;
   }
 });
 window.addEventListener('resize',function(){if(ready)post({type:'insets',insets:insets()})});
 d.addEventListener('visibilitychange',function(){if(d.visibilityState==='visible'&&ready){pushState();resync()}});
+
+/* Notes from the free Bible page (app.gatheringtc.com/bible) on this device: offer them to the App page,
+   which asks the person whether to save them to their account. */
+function bibleOffer(){try{var v=localStorage.getItem('tg-bible');if(!v)return;var d=JSON.parse(v);if(d&&typeof d==='object')post({type:'bibleLocal',data:d})}catch(e){}}
 
 /* Notifications: the browser asks only after a tap on this page itself, so the question appears here. */
 function show(t,p,canTurnOn){$('sheet-t').textContent=t;$('sheet-p').textContent=p;$('sheet-on').hidden=!canTurnOn;$('sheet-no').textContent=canTurnOn?'Not now':'OK';$('sheet').hidden=false}

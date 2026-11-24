@@ -2196,6 +2196,7 @@ function groupView(id){
   const body=`<div><div class="eyebrow" style="color:var(--groups)">${esc(g.type||'Group')}</div><h2 style="margin-top:3px">${esc(g.name)}</h2><p class="sub" style="margin-top:4px">${esc([g.schedule,g.location].filter(Boolean).join(' · '))}</p>${g.description?`<p style="margin-top:8px;max-width:62ch">${esc(g.description)}</p>`:''}</div>
   <div><div class="section-t">Members (${mem.length})</div><div class="panel"><div class="list">${mem.map(p=>`<div class="li">${avatar(p)}<div class="grow"><button class="link t" data-act="person" data-id="${esc(p.id)}">${esc(p.first+' '+p.last)}</button>${p.id===g.leaderId?' <span class="pill acc">Leader</span>':''}<div class="s">${esc(p.phone||p.email||'')}</div></div>${W(`<button class="btn ghost xs" data-act="grp-rm" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.first)}">${icon('x')}</button>`)}</div>`).join('')||'<div class="empty">No members yet.</div>'}</div></div>
   ${W(`<div class="toolbar" style="margin-top:10px"><select id="grp-add" aria-label="Add member" style="flex:1;min-width:0"><option value="">Add a member…</option>${non.map(p=>`<option value="${esc(p.id)}">${esc(p.first+' '+p.last)}</option>`).join('')}</select><button class="btn" data-act="grp-add">Add</button></div>`)}</div>
+  ${bbGroupPanel(g)}
   <div><div class="section-t">Attendance</div>
   ${taking?`<form class="panel" data-form="attendance" style="padding:14px;display:flex;flex-direction:column;gap:10px"><div class="field"><label for="att-date">Meeting date</label><input id="att-date" name="date" type="date" value="${TODAY}" required style="max-width:200px"></div>${mem.map(p=>`<label class="checkrow"><input type="checkbox" name="p" value="${esc(p.id)}" checked> ${esc(p.first+' '+p.last)}</label>`).join('')}<div class="actions"><button class="btn primary" type="submit">Save attendance</button><button class="btn" type="button" data-act="att-cancel">Cancel</button></div></form>`
   :W(`<button class="btn sm" data-act="att-take" style="margin-bottom:10px">Take attendance</button>`)}
@@ -6255,14 +6256,14 @@ const BB_PLANS=[
   {id:'ps-prov-31',name:'Psalms and Proverbs in a month',days:31,blurb:'A chapter of Proverbs and about 5 psalms a day.',custom:'pp'}];
 const BB_QUESTIONS=['What does this passage show us about God?','What does it show us about people, and about ourselves?','Is there a promise to hold on to, a command to obey, or an example to follow?','How will you live this out this week?'];
 const BB={tab:'read',b:42,c:3,sel:[],q:'',scope:'all',res:null,resN:200,data:null,loading:false,err:null,queue:[],timer:null,saving:false,fs:19,
-  studies:null,sLoading:false,sErr:null,groups:null,flash:null,plan:null,open:{},nf:'all'};
+  studies:null,sLoading:false,sErr:null,groups:null,flash:null,plan:null,open:{},nf:'all',sg:'',gi:{},local:null,localSkip:false,importing:false};
 try{const p=JSON.parse(localStorage.getItem('tg-bible-pos')||'null');if(p&&p.b>=0&&p.b<66&&p.c>=1){BB.b=p.b;BB.c=p.c}}catch(e){}
 try{const f=+localStorage.getItem('tg-bible-fs');if(f>=14&&f<=30)BB.fs=f}catch(e){}
 const bbEmpty=()=>({hl:{},notes:{},plans:{}});
 const bbK=(b,c,v)=>`${b}.${c}.${v}`;
 const bbStoreKey=()=>S.mode==='public'?'tg-bible':'tg-bible-'+S.mode;
 const bbStudyOk=()=>S.mode==='live'&&S.canComm;
-function bbReset(){BB.data=null;BB.queue=[];BB.studies=null;BB.groups=null;BB.sErr=null}
+function bbReset(){BB.data=null;BB.queue=[];BB.studies=null;BB.groups=null;BB.sErr=null;BB.sg='';BB.gi={}}
 
 /* Where notes live: the account when signed in, otherwise this browser. */
 function bbData(){
@@ -6337,8 +6338,8 @@ VIEWS.bible=function(){
   if(window.TGK.err()||!bbT().length)return head('Bible','King James Version')+`<div class="panel"><div class="empty"><b>The Bible couldn’t open in this browser</b>Try a current version of Chrome, Edge or Safari.</div></div>`;
   const T=[['read','Read'],['search','Search'],['plans','Reading plans'],['notes','My notes'],['study','Group study']];
   const tabs=`<div class="tabs" role="tablist">${T.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${BB.tab===k}" data-act="bb-tab" data-t="${k}">${l}</button>`).join('')}</div>`;
-  const pub=S.mode==='public'?`<a class="btn" href="https://app.gatheringtc.com/" target="_top">${icon('user')}Church sign in</a>`:'';
-  const body=BB.tab==='search'?bbSearchView():BB.tab==='plans'?bbPlansView():BB.tab==='notes'?bbNotesView():BB.tab==='study'?bbStudyView():bbReadView();
+  const pub=S.mode==='public'?`<a class="btn" href="https://app.gatheringtc.com/?go=bible" target="_top">${icon('user')}Save to my church account</a>`:'';
+  const body=bbImportBanner()+(BB.tab==='search'?bbSearchView():BB.tab==='plans'?bbPlansView():BB.tab==='notes'?bbNotesView():BB.tab==='study'?bbStudyView():bbReadView());
   return`<div class="bb" style="--bbfs:${BB.fs}px">`+head('Bible','King James Version · free for anyone to read and study',pub)+tabs+body+`</div>`;
 };
 function bbReadView(){
@@ -6400,6 +6401,7 @@ function bbPlansView(){
       <div class="bb-pacts"><button class="btn sm ghost" data-act="bb-pdays" data-id="${def.id}">${open?'Hide':'See'} every day</button><button class="btn sm ghost" data-act="bb-pstop" data-id="${def.id}">Stop this plan</button></div>
       ${open?`<div class="bb-days">${Array.from({length:def.days},(_,i)=>i+1).map(n=>`<label class="bb-dayrow ${n===today?'today':''}"><input type="checkbox" data-change="bb-pcheck" data-id="${def.id}" data-day="${n}" ${done.has(n)?'checked':''}><span class="n">Day ${n}</span><button type="button" class="link" data-act="bb-pread" data-id="${def.id}" data-day="${n}">${esc(bbRange(bbDay(def,n)))}</button></label>`).join('')}</div>`:''}</div></div>`}).join('');
   h+=`<div class="panel"><div class="panel-h"><h2>${mine.length?'Start another plan':'Choose a reading plan'}</h2></div><div class="list">${rest.length?rest.map(p=>`<div class="li"><span class="ic-b">${icon('bible')}</span><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.blurb)}</div></div><button class="btn sm primary" data-act="bb-pstart" data-id="${p.id}">Start today</button></div>`).join(''):`<div class="empty">You’re following every plan.</div>`}</div></div>`;
+  if(S.mode==='live'){const sh=d.share!==false;h+=`<div class="panel bb-share"><div class="grow"><b>${sh?'Your group leaders can see your reading plan progress':'Your reading plan progress is private'}</b><div class="muted">${sh?'They see which plans you follow and how far along you are, never your notes or highlights.':'Your group leaders won’t see which plans you follow.'}</div></div><button class="btn sm" data-act="bb-share" data-v="${sh?'':'1'}">${sh?'Keep it private':'Share with my leaders'}</button></div>`}
   return bbWhere()+h;
 }
 function bbNotesView(){
@@ -6413,29 +6415,71 @@ function bbNotesView(){
     <div class="bb-nacts"><button class="btn sm" data-act="bb-note" data-k="${k}">${icon('edit')}${n?'Edit':'Add note'}</button>${h?`<button class="btn sm ghost" data-act="bb-unhl" data-k="${k}">Remove highlight</button>`:''}</div></div>`}).join('')||`<div class="empty">Nothing here.</div>`}</div></div>`;
 }
 function bbStudyView(){
-  if(!bbStudyOk())return`<div class="panel"><div class="empty"><b>Study the Bible together</b>${S.mode==='public'?'Church members can share a passage with discussion questions and talk about it in their church’s Forum. <a href="https://app.gatheringtc.com/" target="_top">Sign in to your church</a> to start one.':S.mode==='demo'?'In your church’s live app, anyone can share a passage with discussion questions and talk about it together in the Forum.':'Group study happens in the Forum, which your role doesn’t include.'}</div></div>`;
+  if(!bbStudyOk())return`<div class="panel"><div class="empty"><b>Study the Bible together</b>${S.mode==='public'?'Church members can share a passage with discussion questions and talk about it in their church’s Forum. <a href="https://app.gatheringtc.com/?go=bible" target="_top">Open your church app</a> to start one.':S.mode==='demo'?'In your church’s live app, anyone can share a passage with discussion questions, keep each group’s studies together, and talk about them in the Forum.':'Group study happens in the Forum, which your role doesn’t include.'}</div></div>`;
+  if(BB.groups===null)bbLoadGroups();
+  const G=BB.groups||[];if(BB.sg&&!G.some(g=>g.id===BB.sg))BB.sg='';
+  const chips=G.length?`<div class="bb-chips bb-pad"><button class="chip ${!BB.sg?'on':''}" data-act="bb-sg" data-id="">All studies</button>${G.map(g=>`<button class="chip ${BB.sg===g.id?'on':''}" data-act="bb-sg" data-id="${esc(g.id)}">${esc(g.name)}</button>`).join('')}</div>`:'';
+  const top=`<div class="panel bb-sthead"><div class="grow"><h2>Study a passage together</h2><p class="muted">Share a passage with questions to talk about. It goes in the Forum’s Bible Study category${G.length?', and is kept with the group you choose':''}.</p></div><button class="btn primary" data-act="bb-study" data-g="${esc(BB.sg)}">${icon('plus')}Start a study</button></div>`;
+  if(BB.sg)return top+chips+bbGroupBlock(BB.sg,false);
   if(!BB.studies&&!BB.sLoading&&!BB.sErr)bbLoadStudies();
   const L=BB.studies;
-  return`<div class="panel bb-sthead"><div class="grow"><h2>Study a passage together</h2><p class="muted">Share a passage with questions to talk about. It goes in the Forum’s Bible Study category, and you can invite one of your groups.</p></div><button class="btn primary" data-act="bb-study">${icon('plus')}Start a study</button></div>
-  <div class="panel"><div class="panel-h"><h2>Recent studies</h2></div>${BB.sErr?`<div class="empty">${esc(BB.sErr)}</div>`:!L?`<div class="empty">Loading…</div>`:L.length?`<div class="list">${L.map(t=>`<button class="li" data-act="bb-topic" data-id="${esc(t.id)}"><span class="ic-b">${icon('forum')}</span><div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.authorName)} · ${t.replies} repl${t.replies===1?'y':'ies'} · ${esc(fmtShort(String(t.lastAt||'').slice(0,10)))}</div></div>${icon('chev')}</button>`).join('')}</div>`:`<div class="empty">No studies yet. Start the first one.</div>`}</div>`;
+  return top+chips+`<div class="panel"><div class="panel-h"><h2>Recent studies</h2></div>${BB.sErr?`<div class="empty">${esc(BB.sErr)}</div>`:!L?`<div class="empty">Loading…</div>`:L.length?`<div class="list">${L.map(bbStudyLi).join('')}</div>`:`<div class="empty">No studies yet. Start the first one.</div>`}</div>`;
 }
+function bbStudyLi(t){
+  return`<div class="li bb-sli"><span class="ic-b">${icon('forum')}</span><div class="grow"><button class="link t" data-act="bb-topic" data-id="${esc(t.id)}">${esc(t.title)}</button>
+    <div class="s">${t.groupName?`<span class="pill">${esc(t.groupName)}</span> `:''}${esc(t.authorName)} · ${esc(fmtShort(String(t.at||t.lastAt||'').slice(0,10)))} · ${t.replies} repl${t.replies===1?'y':'ies'}</div>
+    ${t.summary?`<div class="bb-sum"><b>What we discussed</b>${esc(t.summary)}<span class="muted">— ${esc(t.summaryBy)}${t.summaryAt?', '+esc(fmtShort(String(t.summaryAt).slice(0,10))):''}</span></div>`:''}</div>
+    <div class="bb-nacts"><button class="btn sm" data-act="bb-topic" data-id="${esc(t.id)}">Conversation</button>${t.canSummary?`<button class="btn sm ghost" data-act="bb-sum" data-id="${esc(t.id)}">${t.summary?'Edit summary':'Add summary'}</button>`:''}</div></div>`;
+}
+/* One group's studies, and (for its leader, Admins and Staff) everyone's reading-plan progress. */
+function bbGroupBlock(gid,inGroup){
+  const I=BB.gi[gid];if(!I){bbLoadGroup(gid);return`<div class="panel"><div class="empty">Loading…</div></div>`}
+  if(I.error)return`<div class="panel"><div class="empty">${esc(I.error)}</div></div>`;
+  let h=`<div class="panel"><div class="panel-h"><h2>Bible studies</h2>${inGroup?`<button class="btn sm" data-act="bb-study" data-g="${esc(gid)}">${icon('plus')}Start a study</button>`:''}</div>${I.studies.length?`<div class="list">${I.studies.map(bbStudyLi).join('')}</div>`:`<div class="empty">No studies for this group yet.</div>`}</div>`;
+  if(I.progress){
+    const rows=I.progress.map(p=>{let st;
+      if(!p.account)st=`<span class="muted">Hasn’t joined the church app</span>`;
+      else if(p.hidden)st=`<span class="muted">Keeps reading progress private</span>`;
+      else if(!p.plans.length)st=`<span class="muted">Not following a plan</span>`;
+      else st=p.plans.map(x=>{const def=bbPlanDef(x.id);if(!def)return'';const today=bbToday(def,{start:x.start});const pct=Math.round(x.done/def.days*100);const behind=Math.max(0,today-x.done);
+        return`<div class="bb-pg"><div class="bb-pg-t"><b>${esc(def.name)}</b><span>${pct}% · ${behind>1?`${behind} days behind`:x.done>=today?'On track':'About on track'}</span></div><div class="meter"><i style="width:${pct}%"></i></div></div>`}).join('');
+      return`<div class="li bb-pr"><div class="bb-prn">${esc(p.name)}${p.leader?' <span class="pill acc">Leader</span>':''}${p.active?`<div class="s">Last active ${esc(fmtShort(p.active.slice(0,10)))}</div>`:''}</div><div class="grow">${st}</div></div>`}).join('');
+    h+=`<div class="panel"><div class="panel-h"><h2>Reading plans</h2><span class="muted">Only you and church leaders see this. Never anyone’s notes.</span></div><div class="list">${rows||'<div class="empty">No one in this group yet.</div>'}</div></div>`;
+  }
+  return h;
+}
+/* For the Groups screen's group window (Admins, Staff and Leaders). */
+function bbGroupPanel(g){
+  if(S.mode!=='live'||!S.canComm)return'';
+  const I=BB.gi[g.id];if(I&&I._t&&Date.now()-I._t>60000)delete BB.gi[g.id];
+  return`<div><div class="section-t">Bible study</div>${bbGroupBlock(g.id,true)}</div>`;
+}
+async function bbLoadGroup(gid){if(BB.gi[gid+'…'])return;BB.gi[gid+'…']=1;
+  try{BB.gi[gid]={...await rpc('bibleGroupInfo',{groupId:gid}),_t:Date.now()}}catch(e){BB.gi[gid]={error:e.message}}
+  finally{delete BB.gi[gid+'…'];render();if(modal&&modal.view)paintModal()}}
+async function bbLoadGroups(){BB.groups=[];try{BB.groups=(await rpc('bibleStudyGroups')).groups||[]}catch(e){}render()}
+function bbSumForm(id){
+  const t=[...(BB.studies||[]),...Object.values(BB.gi).flatMap(x=>(x&&x.studies)||[])].find(x=>x.id===id);if(!t)return;
+  openModal({title:`What we discussed: ${t.ref||t.title}`,form:'bb-sum',data:{id},submit:'Save summary',
+    body:`<div class="field full"><label for="bb-sumt">Summary</label><textarea id="bb-sumt" name="s" rows="7" maxlength="3000" placeholder="Main points, questions that came up, prayer requests, what's next…">${esc(t.summary||'')}</textarea><span class="hint">Everyone who can see the study can read this.</span></div>`})}
 async function bbLoadStudies(){BB.sLoading=true;try{BB.studies=(await rpc('bibleStudies')).topics||[];BB.sErr=null}catch(e){BB.sErr=e.message}finally{BB.sLoading=false;render()}}
-function bbWhere(){return`<p class="muted bb-pad">${S.mode==='live'?'Your notes, highlights and plans are saved to your account. Only you can see them.':'Your notes, highlights and plans are saved in this browser on this device.'}</p>`}
+function bbWhere(){let mv='';if(S.mode==='public')try{const t=localStorage.getItem('tg-bible-moved');if(t)mv=` Notes you saved here before ${esc(fmtShort(t.slice(0,10)))} are now in your church account.`}catch(e){}
+  return`<p class="muted bb-pad">${S.mode==='live'?'Your notes, highlights and plans are saved to your account. Only you can see them.':'Your notes, highlights and plans are saved in this browser on this device.'+mv}</p>`}
 function bbWait(){return BB.err?`<div class="panel"><div class="empty">${esc(BB.err)}<button class="btn" data-act="bb-retry">Try again</button></div></div>`:`<div class="panel"><div class="empty"><div class="spinner"></div>Opening your notes…</div></div>`}
 
 function bbNoteForm(k){const [b,c,v]=k.split('.').map(Number);const d=bbData()||bbEmpty();const n=d.notes[k];
   openModal({title:`Note on ${bbLabel(b,[{c,v}])}`,form:'bb-note',data:{k},submit:'Save note',
     body:`<blockquote class="bb-q">${esc(bbVerse(b,c,v))}</blockquote><div class="field full"><label for="bb-nt">Your note</label><textarea id="bb-nt" name="t" rows="6" maxlength="4000" placeholder="What stands out to you? A prayer, a question, how it applies…">${esc(n?n.t:'')}</textarea><span class="hint">${S.mode==='live'?'Private to you.':'Saved in this browser.'}</span></div>`,
     del:n?`<button type="button" class="btn danger" data-act="bb-ndel" data-k="${k}" style="margin-right:auto">Delete note</button>`:''})}
-async function bbStudyForm(){
+async function bbStudyForm(pre){
   const vs=[...BB.sel].sort((a,b)=>a-b);const ref=vs.length?bbRef(BB.b,BB.c,vs):bbChapName(BB.b,BB.c);
-  if(BB.groups===null){BB.groups=[];rpc('bibleStudyGroups').then(r=>{BB.groups=r.groups||[];if(modal&&modal.form==='bb-study')bbStudyForm()}).catch(()=>{})}
-  const keep=modal&&modal.form==='bb-study'?{ref:$('#bb-sref')&&$('#bb-sref').value,title:$('#bb-stitle')&&$('#bb-stitle').value,qs:$('#bb-sq')&&$('#bb-sq').value}:null;
+  if(BB.groups===null){BB.groups=[];rpc('bibleStudyGroups').then(r=>{BB.groups=r.groups||[];if(modal&&modal.form==='bb-study')bbStudyForm(pre)}).catch(()=>{})}
+  const keep=modal&&modal.form==='bb-study'?{ref:$('#bb-sref')&&$('#bb-sref').value,title:$('#bb-stitle')&&$('#bb-stitle').value,qs:$('#bb-sq')&&$('#bb-sq').value,g:$('#bb-sg')&&$('#bb-sg').value}:null;const gsel=keep?keep.g:(pre||'');
   openModal({title:'Start a group study',form:'bb-study',submit:'Post study',wide:true,
     body:`<div class="fields"><div class="field full"><label for="bb-sref">Passage</label><input id="bb-sref" name="ref" required value="${esc(keep?keep.ref:ref)}" placeholder="John 3:16-21"><span class="hint">Up to about 40 verses. The words are included in the post.</span></div>
     <div class="field full"><label for="bb-stitle">Title</label><input id="bb-stitle" name="title" maxlength="140" value="${esc(keep?keep.title:'')}" placeholder="Bible study: ${esc(ref)}"></div>
     <div class="field full"><label for="bb-sq">Questions to talk about</label><textarea id="bb-sq" name="qs" rows="5">${esc(keep?keep.qs:BB_QUESTIONS.join('\n'))}</textarea><span class="hint">One question per line.</span></div>
-    <div class="field full"><label for="bb-sg">Who’s it for?</label><select id="bb-sg" name="group"><option value="">Everyone in the Forum</option>${(BB.groups||[]).map(g=>`<option value="${esc(g.id)}">${esc(g.name)} (they get a notification)</option>`).join('')}</select></div></div>`})}
+    <div class="field full"><label for="bb-sg">Who’s it for?</label><select id="bb-sg" name="group"><option value="">Everyone in the Forum</option>${(BB.groups||[]).map(g=>`<option value="${esc(g.id)}" ${g.id===gsel?'selected':''}>${esc(g.name)} (they get a notification)</option>`).join('')}</select></div></div>`})}
 
 Object.assign(ACT,{
   'bb-tab':d=>{BB.tab=d.t;if(d.t==='study')BB.studies=null;render();window.scrollTo({top:0})},
@@ -6450,11 +6494,16 @@ Object.assign(ACT,{
   'bb-ndel':d=>{bbOps([{t:'note',k:d.k,v:''}]);closeModal();toast('Note deleted')},
   'bb-copy':async()=>{const t=bbSelText();try{await navigator.clipboard.writeText(t);toast('Copied')}catch(e){openModal({title:'Copy this',body:`<textarea class="bb-copy" rows="6" readonly>${esc(t)}</textarea>`})}},
   'bb-share':async()=>{const t=bbSelText();try{await navigator.share({text:t})}catch(e){}},
-  'bb-study':()=>bbStudyForm(),
+  'bb-study':d=>bbStudyForm(d.g||''),
+  'bb-sg':d=>{BB.sg=d.id;if(d.id)delete BB.gi[d.id];render()},
+  'bb-sum':d=>bbSumForm(d.id),
+  'bb-import':()=>bbImport(),
+  'bb-import-no':()=>{BB.localSkip=true;render()},
   'bb-topic':d=>openTopic(d.id),
   'bb-more':()=>{BB.resN+=200;render()},
   'bb-nf':d=>{BB.nf=d.f;render()},
   'bb-retry':()=>{BB.err=null;BB.data=null;render()},
+  'bb-share':d=>{bbOps([{t:'share',v:!!d.v}]);toast(d.v?'Your group leaders can see your progress':'Your progress is private')},
   'bb-pstart':d=>{bbOps([{t:'plan',id:d.id,start:TODAY}]);toast('Plan started. Day 1 is today.')},
   'bb-pstop':d=>{const def=bbPlanDef(d.id);confirmBox(`Stop “${esc(def?def.name:'this plan')}”? Your progress in it will be cleared.`,'Stop plan',()=>{bbOps([{t:'plan',id:d.id,remove:true}]);if(BB.plan&&BB.plan.id===d.id)BB.plan=null;closeModal()})},
   'bb-pday':d=>{const on=!!d.done;bbOps([{t:'plan',id:d.id,day:+d.day,done:on}]);if(on)toast(`Day ${d.day} done`)},
@@ -6478,9 +6527,42 @@ Object.assign(FORMS,{
     const passage=r.verses.map(x=>`${x.v} ${x.t}`).join(' ');if(passage.length>4000){toast('That passage is long. Pick up to about 40 verses.');return}
     const qs=String(fd.get('qs')||'').split('\n').map(x=>x.trim()).filter(Boolean);
     try{const x=await rpc('bibleStudyStart',{ref:r.label,passage,title:String(fd.get('title')||'').trim(),questions:qs,groupId:String(fd.get('group')||'')});
-      closeModal();BB.sel=[];BB.studies=null;toast('Your study is in the Forum');openTopic(x.id)}catch(e){toast(e.message)}},
+      closeModal();BB.sel=[];BB.studies=null;BB.gi={};toast('Your study is in the Forum');openTopic(x.id)}catch(e){toast(e.message)}},
+  'bb-sum':async(fd,f)=>{try{await rpc('bibleStudySummary',{id:f.dataset.id,summary:String(fd.get('s')||'')});closeModal();BB.studies=null;BB.gi={};toast('Summary saved');render()}catch(e){toast(e.message)}},
 });
 document.addEventListener('keydown',ev=>{const el=ev.target;if((ev.key==='Enter'||ev.key===' ')&&el&&el.classList&&el.classList.contains('bb-v')){ev.preventDefault();el.click()}});
+
+/* Notes made on the free Bible page (app.gatheringtc.com/bible) on this device: the app site passes them in,
+   and the person can save them to their account. */
+const bbOkKey=k=>/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(k)&&+k.split('.')[0]<66;
+function bbImportOps(L,A){
+  const ops=[];
+  for(const [k,v] of Object.entries(L.hl||{}))if(bbOkKey(k)&&BB_COLORS.some(c=>c[0]===v)&&!A.hl[k])ops.push({t:'hl',k,v});
+  for(const [k,n] of Object.entries(L.notes||{})){if(!bbOkKey(k)||!n||typeof n.t!=='string'||!n.t.trim())continue;const a=A.notes[k];if(a&&a.t===n.t)continue;ops.push({t:'note',k,v:(a?`${a.t}\n\n${n.t}`:n.t).slice(0,4000)})}
+  for(const [id,p] of Object.entries(L.plans||{})){if(!bbPlanDef(id)||!p)continue;const a=A.plans[id];
+    if(!a){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(p.start||'')))continue;ops.push({t:'plan',id,start:p.start})}
+    const have=new Set(a?a.done:[]);(Array.isArray(p.done)?p.done:[]).forEach(n=>{n=Math.floor(+n);if(n>=1&&n<=400&&!have.has(n))ops.push({t:'plan',id,day:n,done:true})})}
+  return ops;
+}
+function bbImportBanner(){
+  if(S.mode!=='live'||!BB.local||BB.localSkip)return'';const A=bbData();if(!A)return'';
+  const L=BB.local;const nh=Object.keys(L.hl||{}).length,nn=Object.keys(L.notes||{}).length,np=Object.keys(L.plans||{}).filter(bbPlanDef).length;
+  const parts=[nh?`${nh} highlight${nh===1?'':'s'}`:'',nn?`${nn} note${nn===1?'':'s'}`:'',np?`${np} reading plan${np===1?'':'s'}`:''].filter(Boolean);
+  if(!parts.length)return'';
+  return`<div class="panel bb-imp"><span class="ic-b">${icon('download')}</span><div class="grow"><b>Save your notes from this device?</b><div class="muted">You have ${parts.join(', ').replace(/, ([^,]*)$/,' and $1')} from the free Bible page on this device. Save them to your account to keep them on every device.</div></div>
+    <button class="btn primary" data-act="bb-import" ${BB.importing?'disabled':''}>${BB.importing?'Saving…':'Save to my account'}</button><button class="btn ghost" data-act="bb-import-no">Not now</button></div>`;
+}
+async function bbImport(){
+  const A=bbData();if(!A||!BB.local||BB.importing)return;const ops=bbImportOps(BB.local,A);BB.importing=true;render();
+  try{for(let i=0;i<ops.length;i+=200)BB.data={...bbEmpty(),...await rpc('bibleOps',{ops:ops.slice(i,i+200)})};
+    post({type:'bibleLocalDone'});BB.local=null;toast(ops.length?'Your notes are saved to your account':'Those notes were already in your account')}
+  catch(e){toast(e.message||'Your notes couldn’t be saved. Try again.')}finally{BB.importing=false;render()}
+}
+window.addEventListener('message',e=>{if(e.source!==window.parent||window.parent===window)return;const m=e.data;
+  if(!m||typeof m!=='object'||m.tg!==1||m.type!=='bibleLocal'||!m.data||typeof m.data!=='object')return;
+  const d=m.data;BB.local={hl:d.hl&&typeof d.hl==='object'?d.hl:{},notes:d.notes&&typeof d.notes==='object'?d.notes:{},plans:d.plans&&typeof d.plans==='object'?d.plans:{}};
+  if(S.route==='bible')render();
+  if(S.mode==='live'&&S.route!=='bible')toast('You have notes from the free Bible page. Open Bible to save them to your account.')});
 
 /* The public Bible page (app.gatheringtc.com/bible): no account, only the Bible. */
 function startPublic(){
@@ -6535,6 +6617,13 @@ function startPublic(){
 .bb-q{margin:0 0 12px;padding:10px 14px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 12px 12px 0;font-family:Georgia,serif;line-height:1.6}
 .bb-copy{width:100%;font:inherit}
 .bb-sthead{display:flex;align-items:center;gap:14px;padding:18px 20px;margin:0 0 14px;flex-wrap:wrap}.bb-sthead h2{margin:0 0 4px}.bb-sthead p{margin:0}
+.bb-share{display:flex;align-items:center;gap:12px;padding:14px 18px;margin-top:14px;flex-wrap:wrap}
+.bb-imp{display:flex;align-items:center;gap:12px;padding:14px 18px;margin:0 0 14px;flex-wrap:wrap;border-color:var(--accent)}
+.bb-sli{align-items:flex-start}.bb-sli .t{font-size:15px;text-align:left}
+.bb-sum{margin-top:8px;padding:9px 12px;border-radius:12px;background:var(--accent-soft);font-size:14px;white-space:pre-wrap}.bb-sum b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);margin-bottom:3px}.bb-sum .muted{display:block;margin-top:4px;font-size:12.5px}
+.bb-pr{align-items:flex-start}.bb-prn{width:190px;flex:none;font-weight:700}.bb-prn .s{font-weight:500}
+.bb-pg+.bb-pg{margin-top:8px}.bb-pg-t{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;margin-bottom:4px}.bb-pg-t span{color:var(--ink-3);white-space:nowrap}
+@media (max-width:640px){.bb-prn{width:100%}.bb-pr{flex-wrap:wrap}}
 .bb .link{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-weight:700;cursor:pointer}
 @media (max-width:640px){.bb-ch{padding:16px 16px 18px}.bb-ctrls select{max-width:none}.bb-ctrls .field:not(.bb-chf){flex:1 1 150px}.bb-fs{margin-left:0}.bb-nacts{flex-direction:row}.bb-ni{flex-wrap:wrap}}
 @media (max-width:760px){.bb-bar{position:fixed;left:10px;right:10px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:45;margin:0}.bb-bar>b{flex-basis:100%}.bb .bb-ch{padding-bottom:150px}}
